@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Whisper Transcriber</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Local Whisper Transcriber</h1>
+      <p class="privacy-note">🔒 100% Local - Your audio never leaves your device</p>
+    </header>
+    
+    <div class="mic-instructions">
+      <p class="mic-note">🎤 <strong>Important:</strong> You must allow microphone access</p>
+      <ol class="mic-steps">
+        <li>Click "Start Recording" below</li>
+        <li>When prompted, click "Allow" for microphone access</li>
+        <li>If denied, click the lock/site icon in the address bar to enable it</li>
+      </ol>
+    </div>
+    
+    <div class="controls">
+      <select id="model-select">
+        <option value="Xenova/whisper-tiny.en">Tiny (English)</option>
+        <option value="Xenova/whisper-small.en">Small (English)</option>
+        <option value="Xenova/whisper-base.en">Base (English)</option>
+        <option value="Xenova/whisper-tiny">Tiny (Multilingual)</option>
+        <option value="Xenova/whisper-small">Small (Multilingual)</option>
+      </select>
+      
+      <button id="record-btn" class="primary-btn">Start Recording</button>
+    </div>
+    
+    <div class="status-container">
+      <div id="status">Ready</div>
+      <div id="timer">00:00</div>
+      <div class="progress-container">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+    </div>
+    
+    <div class="transcription-container">
+      <textarea id="transcription" placeholder="Transcription will appear here..." readonly></textarea>
+      <div class="action-buttons">
+        <button id="copy-btn">Copy</button>
+        <button id="clear-btn">Clear</button>
+      </div>
+    </div>
+    
+    <footer>
+      <p id="model-info">Model: Loading...</p>
+    </footer>
+  </div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html> 
