@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Whisper Transcribe",
+  "name": "Whisper Transcribe (Dev)",
   "version": "1.0.0",
-  "description": "Locally transcribe speech using Whisper AI - no data leaves your device",
+  "description": "Real-time speech transcription using Whisper AI - 100% private, runs locally in your browser",
   "permissions": [
-    "storage", 
-    "unlimitedStorage"
+    "storage",
+    "unlimitedStorage",
+    "activeTab"
   ],
   "host_permissions": [
     "https://huggingface.co/*",
@@ -14,12 +15,6 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["models/*"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -28,13 +23,17 @@
       "128": "assets/icon128.png"
     }
   },
-  "background": {
-    "service_worker": "background/background.js",
-    "type": "module"
-  },
   "icons": {
     "16": "assets/icon16.png",
     "48": "assets/icon48.png",
     "128": "assets/icon128.png"
-  }
-} 
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [{
+    "resources": ["models/*"],
+    "matches": ["<all_urls>"]
+  }]
+}
