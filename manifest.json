@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Local Whisper Transcriber",
+  "name": "Whisper Transcribe",
   "version": "1.0.0",
   "description": "Locally transcribe speech using Whisper AI - no data leaves your device",
   "permissions": [

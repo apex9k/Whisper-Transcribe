@@ -1,67 +1,70 @@
-# Local Whisper Transcriber
+# Whisper Transcribe Chrome Extension
 
-A Chrome extension that uses Whisper AI to transcribe speech directly in your browser. All processing happens locally - your audio never leaves your device.
+A Chrome extension for real-time speech transcription using Whisper AI, powered by [🤗 transformers.js](https://github.com/huggingface/transformers.js). This extension performs transcription entirely locally in your browser - your audio never leaves your device!
+
+![Whisper Transcribe Demo](assets/demo.gif)
+[📦 Install from Chrome Web Store](#) *(Coming Soon)*
 
 ## Features
 
-- 100% local speech transcription using Whisper AI models
-- Multiple model options (tiny, small, base) in both English and multilingual versions
-- Simple recording interface with timer
-- Copy and clear transcription functionality
-- Persistent model selection
+- 🎙️ Real-time speech transcription
+- 💻 100% local processing - your audio never leaves your device
+- 🔒 Privacy-focused design
+- 🌐 Multiple language support
+- ⚡ Fast and efficient using WebGPU acceleration
+- 🎯 Easy-to-use interface
+- 📋 Copy transcriptions to clipboard
+- 🎚️ Multiple Whisper model options:
+  - Tiny (English)
+  - Small (English)
+  - Base (English)
+  - Tiny (Multilingual)
+  - Small (Multilingual)
 
-## Technical Details
+## Demo Video
+*(Coming Soon)*
 
-- Built with vanilla JavaScript
-- Uses [@xenova/transformers](https://github.com/xenova/transformers.js) for running Whisper models in the browser
-- Implements WebAssembly for efficient model execution
-- Handles audio processing and resampling for optimal transcription quality
+## Installation
+
+1. [Install from Chrome Web Store](#) *(Coming Soon)*
+2. Click the extension icon in your browser
+3. Allow microphone access when prompted
+4. Start transcribing!
 
 ## Development
 
-### Prerequisites
+To run this extension locally:
 
-- Node.js and npm
+1. Clone this repository
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode"
+4. Click "Load unpacked" and select the extension directory
 
-### Setup
+## Technical Details
 
-1. Clone the repository
-2. Install dependencies:
-   ```
-   npm install
-   ```
-3. Build the extension:
-   ```
-   npm run build
-   ```
-4. Load the extension in Chrome:
-   - Go to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `dist` directory
+This extension is built using:
+- [transformers.js](https://github.com/huggingface/transformers.js) - For running Whisper AI models in the browser
+- Web Audio API - For audio processing
+- Chrome Extension Manifest V3
 
-### Project Structure
+The extension is inspired by the [WebGPU Whisper example](https://github.com/huggingface/transformers.js/tree/main/examples/webgpu-whisper) from the transformers.js repository.
 
-- `popup/` - Contains the extension popup UI
-- `background/` - Contains the service worker for background tasks
-- `build.js` - Build script for bundling the extension
-- `manifest.json` - Extension manifest file
+## Privacy
 
-## Usage
-
-1. Click the extension icon to open the popup
-2. Select a model from the dropdown
-3. Click "Start Recording" and allow microphone access
-4. Speak into your microphone
-5. Click "Stop Recording" to end recording and start transcription
-6. Use the Copy button to copy the transcription to your clipboard
+This extension processes all audio locally in your browser. No audio data or transcriptions are ever sent to external servers. The only network requests made are to download the Whisper model files when you first select them.
 
 ## License
 
-MIT
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
+This project is derived from and inspired by the [transformers.js](https://github.com/huggingface/transformers.js) project, which is also licensed under the Apache License 2.0.
 
-- [Transformers.js](https://github.com/xenova/transformers.js)
-- [OpenAI Whisper](https://github.com/openai/whisper)
-- [Hugging Face](https://huggingface.co/) 
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Acknowledgments
+
+- [🤗 Hugging Face](https://huggingface.co/) for transformers.js
+- [OpenAI](https://openai.com/) for the Whisper model
+- The transformers.js team for their excellent WebGPU example 

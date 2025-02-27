@@ -27,6 +27,15 @@ let recordingStartTime = 0;
 let loadingProgress = 0;
 let isWhisperModel = true;
 
+// Add visualizer variables
+let audioContext;
+let analyser;
+let dataArray;
+let canvas;
+let canvasCtx;
+let animationId;
+let visualizerInitialized = false;
+
 // DOM elements
 const recordBtn = document.getElementById('record-btn');
 const transcriptionEl = document.getElementById('transcription');
@@ -87,6 +96,7 @@ async function initializeModel() {
       console.log('Background service worker is active');
     } catch (error) {
       console.warn('Background service worker not active:', error);
+      // Don't fail here, continue with local loading
     }
     
     // Try to use the transcriber from the background script first
@@ -107,17 +117,27 @@ async function initializeModel() {
       console.log('Model preloaded by background script:', response);
     } catch (error) {
       console.warn('Failed to preload model in background:', error);
+      // Don't fail here, continue with local loading
     }
     
     // Now load the model in the popup context
+    console.log('Loading model in popup context...');
     if (isWhisperModel) {
       await loadWhisperModel();
     } else {
       await loadStandardModel();
     }
     
+    // Verify model loaded correctly
+    if (!transcriber || typeof transcriber !== 'function') {
+      throw new Error('Transcriber not properly initialized');
+    }
+    
+    console.log('Model loaded successfully, transcriber type:', typeof transcriber);
     statusEl.textContent = 'Model loaded';
-    modelInfoEl.textContent = `Model: ${selectedModel}`;
+    if (modelInfoEl) {
+      modelInfoEl.textContent = `Model: ${selectedModel}`;
+    }
     progressBar.style.width = '100%';
     
     // Fade out progress bar
@@ -126,11 +146,14 @@ async function initializeModel() {
     }, 1000);
     
   } catch (error) {
-    statusEl.textContent = 'Error loading model';
-    statusEl.classList.add('error');
     console.error('Model loading error:', error);
     console.error('Error details:', error.message);
     console.error('Error stack:', error.stack);
+    if (statusEl) {
+      statusEl.textContent = 'Error loading model';
+      statusEl.classList.add('error');
+    }
+    throw error; // Re-throw to be caught by the initialization
   }
 }
 
@@ -501,10 +524,77 @@ function updateTimer() {
   }
 }
 
+// Initialize visualizer
+function initVisualizer() {
+  if (visualizerInitialized) return;
+  
+  canvas = document.getElementById('waveform');
+  canvasCtx = canvas.getContext('2d');
+  
+  // Set canvas size
+  function resizeCanvas() {
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    canvasCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+  
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 2048;
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  
+  visualizerInitialized = true;
+}
+
+// Draw waveform
+function drawWaveform() {
+  if (!recording) {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+    
+    // Clear canvas
+    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  
+  animationId = requestAnimationFrame(drawWaveform);
+  analyser.getByteTimeDomainData(dataArray);
+  
+  canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  canvasCtx.lineWidth = 2;
+  canvasCtx.strokeStyle = '#4a6ee0';
+  canvasCtx.beginPath();
+  
+  const sliceWidth = canvas.width / dataArray.length;
+  let x = 0;
+  
+  for (let i = 0; i < dataArray.length; i++) {
+    const v = dataArray[i] / 128.0;
+    const y = (v * canvas.height) / 2;
+    
+    if (i === 0) {
+      canvasCtx.moveTo(x, y);
+    } else {
+      canvasCtx.lineTo(x, y);
+    }
+    
+    x += sliceWidth;
+  }
+  
+  canvasCtx.lineTo(canvas.width, canvas.height / 2);
+  canvasCtx.stroke();
+}
+
 // Toggle recording
 async function toggleRecording() {
   if (!recording) {
-    // Start recording
     try {
       if (!transcriber) {
         statusEl.textContent = 'Model not loaded';
@@ -513,7 +603,6 @@ async function toggleRecording() {
       
       audioChunks = [];
       
-      // Add more detailed error handling for microphone access
       try {
         console.log('Requesting microphone access...');
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -526,6 +615,18 @@ async function toggleRecording() {
           video: false
         });
         console.log('Microphone access granted');
+        
+        // Initialize visualizer if needed
+        if (!visualizerInitialized) {
+          initVisualizer();
+        }
+        
+        // Connect audio stream to visualizer
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        
+        // Start waveform animation
+        drawWaveform();
         
         // Get available mime types
         const mimeTypes = MediaRecorder.isTypeSupported ? 
@@ -564,6 +665,7 @@ async function toggleRecording() {
         
         mediaRecorder.addEventListener('start', () => {
           console.log('MediaRecorder started at:', new Date().toISOString());
+          recordBtn.innerHTML = '<i class="fas fa-stop"></i><span>Stop Recording</span>';
           
           // Request data every 2 seconds to avoid losing data
           chunkTimer = setInterval(() => {
@@ -587,6 +689,9 @@ async function toggleRecording() {
         
         mediaRecorder.addEventListener('stop', async () => {
           console.log('MediaRecorder stopped at:', new Date().toISOString());
+          recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Start Recording</span>';
+          statusEl.classList.add('transcribing');
+          statusEl.textContent = 'Transcribing...';
           
           // Clear the timers
           if (chunkTimer) {
@@ -601,7 +706,6 @@ async function toggleRecording() {
           
           // Make sure we update the recording state and UI
           recording = false;
-          recordBtn.textContent = 'Start Recording';
           recordBtn.classList.remove('recording');
           if (recordingTimer) {
             clearInterval(recordingTimer);
@@ -658,7 +762,6 @@ async function toggleRecording() {
         mediaRecorder.start(3000); // Request data every 3 seconds automatically (reduced from 5s)
         
         recording = true;
-        recordBtn.textContent = 'Stop Recording';
         recordBtn.classList.add('recording');
         statusEl.textContent = 'Recording...';
         recordingStartTime = Date.now();
@@ -716,7 +819,7 @@ function stopRecording() {
       
       // Force UI update in case the stop event doesn't fire
       recording = false;
-      recordBtn.textContent = 'Start Recording';
+      recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Start Recording</span>';
       recordBtn.classList.remove('recording');
       if (recordingTimer) {
         clearInterval(recordingTimer);
@@ -730,7 +833,7 @@ function stopRecording() {
     
     // Force UI update even if there's an error
     recording = false;
-    recordBtn.textContent = 'Start Recording';
+    recordBtn.innerHTML = '<i class="fas fa-microphone"></i><span>Start Recording</span>';
     recordBtn.classList.remove('recording');
     if (recordingTimer) {
       clearInterval(recordingTimer);
@@ -744,34 +847,34 @@ function stopRecording() {
 
 // Process a normal (shorter) recording
 async function processRecording(audioBlob) {
-  // Log audio details
-  console.log('Processing recording directly, blob size:', audioBlob.size, 'bytes');
-  const audioArrayBuffer = await audioBlob.arrayBuffer();
-  console.log('Audio array buffer size:', audioArrayBuffer.byteLength);
-  
-  // Check if we have a valid transcriber function
-  console.log('Transcriber type:', typeof transcriber);
-  if (typeof transcriber !== 'function') {
-    throw new Error('Transcriber is not a function. Model may not be properly loaded.');
-  }
-  
-  // Check if this is actually a long recording that should be chunked
-  const estimatedDuration = (Date.now() - recordingStartTime) / 1000;
-  console.log(`Estimated recording duration: ${estimatedDuration.toFixed(1)} seconds`);
-  
-  // If it's longer than 25 seconds, use the long recording processor instead
-  if (estimatedDuration > 25) {
-    console.log('Recording is longer than 25 seconds, redirecting to long recording processor');
-    return await processLongRecording(audioBlob);
-  }
-  
-  // Try the main transcription method first
   try {
+    // Log audio details
+    console.log('Processing recording directly, blob size:', audioBlob.size, 'bytes');
+    const audioArrayBuffer = await audioBlob.arrayBuffer();
+    console.log('Audio array buffer size:', audioArrayBuffer.byteLength);
+    
+    // Check if we have a valid transcriber function
+    console.log('Transcriber type:', typeof transcriber);
+    if (typeof transcriber !== 'function') {
+      throw new Error('Transcriber is not a function. Model may not be properly loaded.');
+    }
+    
+    // Check if this is actually a long recording that should be chunked
+    const estimatedDuration = (Date.now() - recordingStartTime) / 1000;
+    console.log(`Estimated recording duration: ${estimatedDuration.toFixed(1)} seconds`);
+    
+    // If it's longer than 25 seconds, use the long recording processor instead
+    if (estimatedDuration > 25) {
+      console.log('Recording is longer than 25 seconds, redirecting to long recording processor');
+      return await processLongRecording(audioBlob);
+    }
+    
+    // Try the main transcription method first
     console.log('Starting transcription with main method...');
     
     // For short recordings, we'll try to process them directly first
     const result = await transcriber(audioBlob);
-    console.log('Transcription result:', result);
+    statusEl.classList.remove('transcribing');
     
     if (!result || !result.text) {
       console.warn('Transcription result is empty or invalid:', result);
@@ -789,9 +892,10 @@ async function processRecording(audioBlob) {
         transcriptionEl.value += (transcriptionEl.value ? '\n' : '') + '[No speech detected]';
       }
     }
-  } catch (transcriptionError) {
+  } catch (error) {
+    statusEl.classList.remove('transcribing');
     // If the main method fails, try the fallback method
-    console.error('Main transcription method failed:', transcriptionError);
+    console.error('Main transcription method failed:', error);
     console.log('Trying fallback transcription method...');
     
     try {
@@ -839,7 +943,7 @@ async function processRecording(audioBlob) {
         await processLongRecording(audioBlob);
       } catch (lastError) {
         console.error('All transcription methods failed:', lastError);
-        throw transcriptionError; // Throw the original error
+        throw error; // Throw the original error
       }
     }
   }
@@ -1216,15 +1320,70 @@ async function loadSettings() {
 }
 
 // Event listeners
-recordBtn.addEventListener('click', toggleRecording);
+// Remove old event listeners first to prevent duplicates
+recordBtn.removeEventListener('click', toggleRecording);
+copyBtn.removeEventListener('click', copyTranscription);
+clearBtn.removeEventListener('click', clearTranscription);
+modelSelect.removeEventListener('change', changeModel);
+
+// Add event listeners
+recordBtn.addEventListener('click', async (e) => {
+  console.log('Record button clicked, current state:', {
+    recording,
+    transcriber: !!transcriber,
+    model: !!model,
+    processor: !!processor
+  });
+  await toggleRecording();
+});
 copyBtn.addEventListener('click', copyTranscription);
 clearBtn.addEventListener('click', clearTranscription);
 modelSelect.addEventListener('change', changeModel);
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadSettings();
-  await initializeModel();
+  console.log('Popup initialized, starting setup...');
+  try {
+    // Disable record button and show loading state
+    recordBtn.disabled = true;
+    recordBtn.classList.add('loading');
+    statusEl.textContent = 'Loading model...';
+
+    // Load settings first
+    console.log('Loading settings...');
+    await loadSettings();
+    
+    // Initialize model
+    console.log('Settings loaded, initializing model...');
+    await initializeModel();
+    
+    // Enable button and update UI
+    console.log('Model initialized successfully');
+    recordBtn.disabled = false;
+    recordBtn.classList.remove('loading');
+    statusEl.textContent = 'Ready';
+
+    // Re-bind event listeners
+    console.log('Binding event listeners...');
+    recordBtn.addEventListener('click', async () => {
+      console.log('Record button clicked, current state:', {
+        recording,
+        transcriber: !!transcriber,
+        model: !!model,
+        processor: !!processor
+      });
+      await toggleRecording();
+    });
+    copyBtn.addEventListener('click', copyTranscription);
+    clearBtn.addEventListener('click', clearTranscription);
+    modelSelect.addEventListener('change', changeModel);
+  } catch (error) {
+    console.error('Initialization error:', error);
+    statusEl.textContent = 'Error loading model';
+    statusEl.classList.add('error');
+    recordBtn.disabled = true;
+    recordBtn.classList.remove('loading');
+  }
 });
 
 // Save settings when popup closes
