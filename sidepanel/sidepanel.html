@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local Whisper Transcriber</title>
-  <link rel="stylesheet" href="popup.css">
+  <title>Whisper Transcribe</title>
+  <link rel="stylesheet" href="sidepanel.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -14,17 +14,14 @@
       <p class="privacy-note">🔒 100% Local - Your audio never leaves your device</p>
       
       <div class="view-controls">
-        <div class="size-toggles">
-          <button data-size="small" class="size-btn active" title="Small view"><i class="fas fa-compress"></i></button>
-          <button data-size="medium" class="size-btn" title="Medium view"><i class="fas fa-expand"></i></button>
-          <button data-size="large" class="size-btn" title="Large view"><i class="fas fa-expand-alt"></i></button>
-        </div>
-        <button id="sidepanel-btn" title="Open in side panel"><i class="fas fa-columns"></i></button>
+        <button id="popout-btn" title="Open in popup"><i class="fas fa-external-link-alt"></i></button>
+        <button id="theme-toggle" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
       </div>
     </header>
     
     <div class="tabs">
       <button class="tab-btn active" data-tab="transcribe">Transcribe</button>
+      <button class="tab-btn" data-tab="history">History</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
       <button class="tab-btn" data-tab="help">Help</button>
     </div>
@@ -63,6 +60,36 @@
           <div class="action-buttons">
             <button id="copy-btn"><i class="fas fa-copy"></i> Copy</button>
             <button id="clear-btn"><i class="fas fa-trash"></i> Clear</button>
+            <button id="save-btn"><i class="fas fa-save"></i> Save</button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- History Tab (New) -->
+      <div class="tab-pane" id="history-tab">
+        <div class="history-header">
+          <h3>Transcription History</h3>
+          <div class="history-actions">
+            <button id="clear-history-btn" title="Clear all history"><i class="fas fa-trash"></i> Clear All</button>
+          </div>
+        </div>
+        
+        <div class="history-list-container">
+          <div id="history-list" class="history-list">
+            <!-- History items will be populated here -->
+            <div class="history-empty">
+              <i class="fas fa-history"></i>
+              <p>No transcriptions yet</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="history-detail-container">
+          <textarea id="history-detail" placeholder="Select a transcription to view..." readonly></textarea>
+          <div class="history-detail-actions">
+            <button id="history-copy-btn"><i class="fas fa-copy"></i> Copy</button>
+            <button id="history-restore-btn"><i class="fas fa-redo"></i> Restore</button>
+            <button id="history-delete-btn"><i class="fas fa-trash"></i> Delete</button>
           </div>
         </div>
       </div>
@@ -90,14 +117,6 @@
         
         <div class="settings-group">
           <h3>Interface Settings</h3>
-          <div class="setting-item">
-            <label for="default-view">Default View</label>
-            <select id="default-view">
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
-            </select>
-          </div>
           <div class="setting-item">
             <label for="dark-mode">Dark Mode</label>
             <input type="checkbox" id="dark-mode">
@@ -151,6 +170,6 @@
       <p>Powered by Whisper AI - 100% Private & Secure</p>
     </footer>
   </div>
-  <script type="module" src="popup.js"></script>
+  <script type="module" src="sidepanel.js"></script>
 </body>
 </html> 

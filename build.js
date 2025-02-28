@@ -7,24 +7,13 @@ if (!fs.existsSync('dist')) {
   fs.mkdirSync('dist');
 }
 
-// Ensure dist/popup directory exists
-if (!fs.existsSync('dist/popup')) {
-  fs.mkdirSync('dist/popup');
-}
-
-// Ensure dist/background directory exists
-if (!fs.existsSync('dist/background')) {
-  fs.mkdirSync('dist/background');
-}
-
-// Ensure dist/assets directory exists
-if (!fs.existsSync('dist/assets')) {
-  fs.mkdirSync('dist/assets');
-}
-
-// Ensure dist/models directory exists
-if (!fs.existsSync('dist/models')) {
-  fs.mkdirSync('dist/models');
+// Ensure subdirectories exist
+const subdirs = ['popup', 'background', 'assets', 'models', 'sidepanel'];
+for (const dir of subdirs) {
+  const fullPath = path.join('dist', dir);
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath);
+  }
 }
 
 // Create a placeholder file in the models directory to ensure it's included in the extension
@@ -32,7 +21,11 @@ fs.writeFileSync('dist/models/.placeholder', 'This directory is used to store mo
 
 // Build the JS files
 build({
-  entryPoints: ['popup/popup.js', 'background/background.js'],
+  entryPoints: [
+    'popup/popup.js', 
+    'background/background.js',
+    'sidepanel/sidepanel.js'
+  ],
   bundle: true,
   format: 'esm',
   outdir: 'dist',
@@ -52,6 +45,8 @@ build({
   // Copy HTML and CSS files
   fs.copyFileSync('popup/popup.html', 'dist/popup/popup.html');
   fs.copyFileSync('popup/popup.css', 'dist/popup/popup.css');
+  fs.copyFileSync('sidepanel/sidepanel.html', 'dist/sidepanel/sidepanel.html');
+  fs.copyFileSync('sidepanel/sidepanel.css', 'dist/sidepanel/sidepanel.css');
   
   // Copy manifest
   fs.copyFileSync('manifest.json', 'dist/manifest.json');

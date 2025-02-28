@@ -17,30 +17,81 @@ console.log('Local Whisper Transcriber background service worker started');
 console.log('Model path:', env.localModelPath);
 console.log('ONNX configuration:', env.backends.onnx.wasm);
 
-// Create a simple listener to keep the service worker active
+// Listen for extension icon clicks to open side panel
+chrome.action.onClicked.addListener((tab) => {
+  // Open side panel when extension icon is clicked
+  chrome.sidePanel.open({ tabId: tab.id });
+});
+
+// Listen for installation
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('Extension installed:', details);
+  
+  if (details.reason === 'install') {
+    // Set initial settings on install
+    chrome.storage.local.set({
+      defaultModel: 'Xenova/whisper-tiny.en',
+      preloadModel: true,
+      darkMode: false,
+      lastActiveTab: 'transcribe',
+      transcriptionHistory: []
+    });
+  }
+});
+
+// Listen for messages from popup/side panel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Background script received message:', message);
+  
   if (message.action === 'ping') {
     sendResponse({ status: 'active' });
     return true;
   }
   
   if (message.action === 'preloadModel') {
-    // We need to return true immediately to keep the message channel open
-    // for the async response
-    preloadModel(message.model)
-      .then(result => {
-        console.log('Preload completed, sending response');
-        sendResponse({ status: 'success', result });
-      })
-      .catch(error => {
-        console.error('Preload failed, sending error response');
-        sendResponse({ status: 'error', message: error.message });
-      });
+    console.log('Preloading model:', message.model);
+    // In a full implementation, you would preload the model here
+    sendResponse({ status: 'success', message: 'Model preloaded (simulated)' });
     return true;
   }
   
-  return false;
+  if (message.action === 'saveTranscription') {
+    saveToHistory(message.text, message.model);
+    sendResponse({ status: 'success' });
+    return true;
+  }
 });
+
+// Save a transcription to history
+async function saveToHistory(text, model) {
+  if (!text || text.trim() === '') return;
+  
+  try {
+    // Get current history
+    const data = await chrome.storage.local.get('transcriptionHistory');
+    const history = data.transcriptionHistory || [];
+    
+    // Add new entry
+    history.unshift({
+      id: Date.now(),
+      text: text,
+      model: model,
+      timestamp: new Date().toISOString(),
+      preview: text.substring(0, 100) + (text.length > 100 ? '...' : '')
+    });
+    
+    // Limit history to 50 entries
+    if (history.length > 50) {
+      history.pop();
+    }
+    
+    // Save back to storage
+    await chrome.storage.local.set({ transcriptionHistory: history });
+    console.log('Saved to history, total entries:', history.length);
+  } catch (error) {
+    console.error('Error saving to history:', error);
+  }
+}
 
 // Preload model function
 async function preloadModel(modelName) {

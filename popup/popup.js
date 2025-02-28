@@ -1,4 +1,5 @@
 import { pipeline, env } from '@xenova/transformers';
+import { loadWhisperModel, loadStandardModel, cleanWhisperOutput } from '../shared/whisper-utils.js';
 
 // Configure transformers.js to use the extension's storage
 env.localModelPath = chrome.runtime.getURL('models/');
@@ -47,29 +48,6 @@ const timerEl = document.getElementById('timer');
 const modelInfoEl = document.getElementById('model-info');
 const progressBar = document.getElementById('progress-bar');
 
-// Clean up Whisper output by removing special tags
-function cleanWhisperOutput(text) {
-  if (!text) return '';
-  
-  // Remove Whisper special tags
-  return text
-    .replace(/<\|startoftranscript\|>/g, '')
-    .replace(/<\|endoftranscript\|>/g, '')
-    .replace(/<\|endoftext\|>/g, '')
-    .replace(/<\|notimestamps\|>/g, '')
-    .replace(/<\|transcribe\|>/g, '')
-    .replace(/<\|translate\|>/g, '')
-    // Additional tags that might appear in some models
-    .replace(/\[START\]/g, '')
-    .replace(/\[END\]/g, '')
-    .replace(/\[\w+\]/g, '') // Remove any bracketed tags
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .replace(/^\s*\.\s*$/, '') // Remove lone periods
-    .replace(/^[.,;:!?]+/, '') // Remove leading punctuation
-    .replace(/[.,;:!?]+$/, '') // Remove trailing punctuation
-    .trim();
-}
-
 // Progress callback
 const progressCallback = (progress) => {
   if (progress.status === 'download') {
@@ -84,427 +62,80 @@ const progressCallback = (progress) => {
 // Initialize the model
 async function initializeModel() {
   try {
-    statusEl.textContent = 'Loading model...';
+    // Reset UI
     progressBar.style.width = '0%';
     
-    console.log('Starting model initialization for:', selectedModel);
-    isWhisperModel = selectedModel.toLowerCase().includes('whisper');
-    
-    // First try to ping the background service worker to ensure it's active
-    try {
-      await chrome.runtime.sendMessage({ action: 'ping' });
-      console.log('Background service worker is active');
-    } catch (error) {
-      console.warn('Background service worker not active:', error);
-      // Don't fail here, continue with local loading
+    // If we're using the same model as before and it's already loaded, skip
+    if (transcriber && selectedModel === modelSelect.value) {
+      console.log('Model already loaded:', selectedModel);
+      statusEl.textContent = 'Ready';
+      return { success: true };
     }
     
-    // Try to use the transcriber from the background script first
+    // Update model selection and store preference
+    selectedModel = modelSelect.value;
+    chrome.storage.local.set({ defaultModel: selectedModel });
+    
+    // Disable record button during loading
+    if (recordBtn) recordBtn.disabled = true;
+    
+    // Check if backend is ready
     try {
-      const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ 
-          action: 'preloadModel', 
-          model: selectedModel 
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else {
-            resolve(response);
-          }
-        });
+      const response = await chrome.runtime.sendMessage({ action: 'ping' });
+      console.log('Background service worker status:', response);
+      
+      // Try to use preloaded model from background
+      const preloadResponse = await chrome.runtime.sendMessage({
+        action: 'preloadModel',
+        model: selectedModel
       });
       
-      console.log('Model preloaded by background script:', response);
+      console.log('Model preloaded by background script:', preloadResponse);
     } catch (error) {
-      console.warn('Failed to preload model in background:', error);
-      // Don't fail here, continue with local loading
+      console.warn('Background service worker not ready:', error);
     }
     
-    // Now load the model in the popup context
-    console.log('Loading model in popup context...');
+    // Update UI
+    statusEl.textContent = 'Loading model...';
+    
+    // Check if it's a Whisper model (naming pattern)
+    isWhisperModel = selectedModel.toLowerCase().includes('whisper');
+    
+    // Load appropriate model type using shared utility functions
+    let result;
     if (isWhisperModel) {
-      await loadWhisperModel();
+      console.log('Loading Whisper model');
+      result = await loadWhisperModel(selectedModel, progressCallback);
+      processor = result.processor;
+      model = result.model;
+      transcriber = result.transcriber;
     } else {
-      await loadStandardModel();
+      console.log('Loading standard model');
+      result = await loadStandardModel(selectedModel, progressCallback);
+      transcriber = result.transcriber;
     }
     
-    // Verify model loaded correctly
-    if (!transcriber || typeof transcriber !== 'function') {
-      throw new Error('Transcriber not properly initialized');
-    }
+    console.log('Model loaded successfully');
     
-    console.log('Model loaded successfully, transcriber type:', typeof transcriber);
-    statusEl.textContent = 'Model loaded';
+    // Update UI
+    statusEl.textContent = 'Ready';
     if (modelInfoEl) {
       modelInfoEl.textContent = `Model: ${selectedModel}`;
     }
     progressBar.style.width = '100%';
     
-    // Fade out progress bar
+    // Fade out progress bar after a delay
     setTimeout(() => {
       progressBar.style.width = '0%';
     }, 1000);
     
+    // Re-enable record button
+    if (recordBtn) recordBtn.disabled = false;
+    
+    return { success: true };
   } catch (error) {
-    console.error('Model loading error:', error);
-    console.error('Error details:', error.message);
-    console.error('Error stack:', error.stack);
-    if (statusEl) {
-      statusEl.textContent = 'Error loading model';
-      statusEl.classList.add('error');
-    }
-    throw error; // Re-throw to be caught by the initialization
-  }
-}
-
-// Load Whisper model using the specific approach
-async function loadWhisperModel() {
-  console.log('Loading Whisper model using specific approach');
-  
-  try {
-    // Import the specific model classes
-    const { AutoProcessor, AutoModelForSpeechSeq2Seq, WhisperTokenizer } = await import('@xenova/transformers');
-    
-    // Load the processor
-    console.log('Loading processor...');
-    processor = await AutoProcessor.from_pretrained(selectedModel, {
-      progress_callback: progressCallback,
-      cache_dir: env.cacheDir,
-      local_files_only: false,
-      chunk_length_s: 30,      // Set chunking globally
-      stride_length_s: 10,     // Set stride globally
-      return_timestamps: true  // Enable timestamps
-    });
-    
-    // Also load the tokenizer explicitly
-    console.log('Loading tokenizer...');
-    const tokenizer = await WhisperTokenizer.from_pretrained(selectedModel, {
-      progress_callback: progressCallback,
-      cache_dir: env.cacheDir,
-      local_files_only: false,
-    });
-    
-    // Attach the tokenizer to the processor for easier access
-    processor.tokenizer = tokenizer;
-    console.log('Tokenizer loaded and attached to processor');
-    
-    // Load the model
-    console.log('Loading model...');
-    model = await AutoModelForSpeechSeq2Seq.from_pretrained(selectedModel, {
-      progress_callback: progressCallback,
-      cache_dir: env.cacheDir,
-      local_files_only: false,
-      chunk_length_s: 30,      // Set chunking globally
-      stride_length_s: 10,     // Set stride globally
-      return_timestamps: true  // Enable timestamps
-    });
-    
-    // Attach the tokenizer to the model as well
-    model.tokenizer = tokenizer;
-    
-    // Log the processor and model structure
-    console.log('Processor structure:', Object.keys(processor));
-    console.log('Model structure:', Object.keys(model));
-    
-    // Add a helper function to properly process audio
-    async function processAudioBlob(audioBlob) {
-      console.log('Processing audio blob:', audioBlob.size, 'bytes', audioBlob.type);
-      
-      // Create an audio context
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000 // Whisper models expect 16kHz audio
-      });
-      
-      // Convert blob to array buffer
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      console.log('Audio array buffer size:', arrayBuffer.byteLength);
-      
-      // Decode the audio data
-      try {
-        console.log('Decoding audio data...');
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        console.log('Audio decoded successfully:', 
-          'duration:', audioBuffer.duration, 
-          'channels:', audioBuffer.numberOfChannels,
-          'sample rate:', audioBuffer.sampleRate);
-        
-        // Get the audio data from the first channel
-        const audioData = audioBuffer.getChannelData(0);
-        console.log('Audio data extracted, length:', audioData.length);
-        
-        // Resample to 16kHz if needed
-        let finalAudioData = audioData;
-        if (audioBuffer.sampleRate !== 16000) {
-          console.log('Resampling audio from', audioBuffer.sampleRate, 'Hz to 16000 Hz');
-          // Simple resampling by taking every nth sample
-          const ratio = audioBuffer.sampleRate / 16000;
-          const newLength = Math.floor(audioData.length / ratio);
-          finalAudioData = new Float32Array(newLength);
-          for (let i = 0; i < newLength; i++) {
-            finalAudioData[i] = audioData[Math.floor(i * ratio)];
-          }
-          console.log('Resampled audio data length:', finalAudioData.length);
-        }
-        
-        return finalAudioData;
-      } catch (error) {
-        console.error('Error decoding audio:', error);
-        throw error;
-      } finally {
-        // Close the audio context
-        if (audioContext.state !== 'closed') {
-          await audioContext.close();
-        }
-      }
-    }
-    
-    // Create a custom transcriber function
-    transcriber = async (audioBlob, options = {}) => {
-      try {
-        console.log('Whisper transcriber called with audio blob:', audioBlob.size, 'bytes');
-        
-        // Process the audio using our helper function
-        const audioData = await processAudioBlob(audioBlob);
-        
-        // Check if processor is valid
-        if (!processor) {
-          throw new Error('Processor is not initialized');
-        }
-        
-        // Log processor methods to debug
-        console.log('Processor methods:', Object.getOwnPropertyNames(processor));
-        console.log('Processor prototype methods:', processor.constructor ? Object.getOwnPropertyNames(processor.constructor.prototype) : 'No constructor');
-        
-        // Estimate audio duration (rough estimate based on sample rate and length)
-        const estimatedDuration = audioData.length / 16000; // assuming 16kHz sample rate
-        console.log(`Estimated audio duration from samples: ${estimatedDuration.toFixed(2)} seconds`);
-        
-        // For longer audio, use our own chunking approach
-        if (estimatedDuration > 25) {
-          console.log('Audio is longer than 25 seconds, using custom chunking approach');
-          
-          // Merge options with defaults
-          const chunkOptions = {
-            chunk_length_s: options.chunk_length_s || 20,     // Reduced from 30 to 20 for faster processing
-            stride_length_s: options.stride_length_s || 5,    // Reduced from 10 to 5 for better accuracy
-            max_new_tokens: options.max_new_tokens || 448,
-            return_timestamps: options.return_timestamps !== undefined ? options.return_timestamps : true
-          };
-          
-          console.log('Using custom chunking with options:', chunkOptions);
-          
-          // Calculate chunk sizes in samples
-          const sampleRate = 16000;
-          const chunkSizeSamples = chunkOptions.chunk_length_s * sampleRate;
-          const strideSizeSamples = chunkOptions.stride_length_s * sampleRate;
-          
-          // Optimize number of chunks - use larger chunks for very long audio
-          let adjustedChunkSize = chunkSizeSamples;
-          let adjustedStrideSize = strideSizeSamples;
-          
-          // For very long audio (>2 minutes), use larger chunks with less overlap
-          if (estimatedDuration > 120) {
-            adjustedChunkSize = 25 * sampleRate; // 25 seconds
-            adjustedStrideSize = 3 * sampleRate; // 3 seconds overlap
-            console.log('Very long audio detected, using larger chunks with less overlap');
-          }
-          
-          const numChunks = Math.ceil((audioData.length - adjustedChunkSize) / (adjustedChunkSize - adjustedStrideSize)) + 1;
-          
-          console.log(`Splitting audio into ${numChunks} chunks of ${adjustedChunkSize/sampleRate}s with ${adjustedStrideSize/sampleRate}s stride`);
-          
-          // Show progress in the UI
-          statusEl.textContent = `Transcribing long audio (${estimatedDuration.toFixed(0)}s)...`;
-          
-          // Process each chunk and collect results
-          let fullTranscription = '';
-          let lastWords = new Set(); // Track recently seen words to avoid repetition
-          
-          for (let i = 0; i < numChunks; i++) {
-            const startSample = i * (adjustedChunkSize - adjustedStrideSize);
-            const endSample = Math.min(startSample + adjustedChunkSize, audioData.length);
-            
-            console.log(`Processing chunk ${i+1}/${numChunks}: samples ${startSample} to ${endSample}`);
-            
-            // Update UI with progress
-            statusEl.textContent = `Transcribing chunk ${i+1}/${numChunks}...`;
-            
-            // Extract chunk data
-            const chunkData = audioData.slice(startSample, endSample);
-            
-            // Process this chunk
-            const processorOptions = {
-              chunk_length_s: chunkOptions.chunk_length_s,
-              stride_length_s: chunkOptions.stride_length_s
-            };
-            
-            const inputs = await processor(chunkData, processorOptions);
-            
-            // Generate transcription for this chunk
-            const generateOptions = {
-              max_new_tokens: chunkOptions.max_new_tokens,
-              return_timestamps: chunkOptions.return_timestamps
-            };
-            
-            const output = await model.generate(inputs.input_features, generateOptions);
-            
-            // Decode the output
-            let chunkTranscription;
-            if (processor.tokenizer && typeof processor.tokenizer.decode === 'function') {
-              chunkTranscription = processor.tokenizer.decode(output[0]);
-            } else {
-              chunkTranscription = model.tokenizer.decode(output[0]);
-            }
-            
-            // Clean up the transcription
-            const cleanedChunk = cleanWhisperOutput(chunkTranscription);
-            console.log(`Chunk ${i+1} transcription:`, cleanedChunk);
-            
-            // Add to full transcription with deduplication
-            if (cleanedChunk) {
-              // Split into words and filter out duplicates from recent chunks
-              const words = cleanedChunk.split(/\s+/);
-              const uniqueWords = [];
-              
-              for (const word of words) {
-                // Skip if this is a repeated word we've seen recently
-                // But allow up to 3 repetitions (for cases like "49, 49, 49" that might be legitimate)
-                const repetitionCount = [...lastWords].filter(w => w === word).length;
-                if (repetitionCount < 3) {
-                  uniqueWords.push(word);
-                  // Add to our tracking set
-                  lastWords.add(word);
-                  // Keep the set at a reasonable size
-                  if (lastWords.size > 20) {
-                    lastWords.delete([...lastWords][0]);
-                  }
-                }
-              }
-              
-              // Only add non-empty chunks
-              if (uniqueWords.length > 0) {
-                const dedupedChunk = uniqueWords.join(' ');
-                fullTranscription += (fullTranscription && !fullTranscription.endsWith(' ') ? ' ' : '') + dedupedChunk;
-                
-                // Update the transcription area with progress
-                transcriptionEl.value = fullTranscription + ' [transcribing...]';
-              }
-            }
-          }
-          
-          console.log('Full transcription from chunks:', fullTranscription);
-          return { text: fullTranscription || '[Empty transcription]' };
-        }
-        
-        // For shorter audio, use the standard approach
-        console.log('Processing audio with processor and chunking parameters...');
-        
-        // Always set chunking parameters for consistency
-        const processorOptions = {
-          chunk_length_s: 30,   // Increased from 15 to 30
-          stride_length_s: 10   // Increased from 5 to 10
-        };
-        
-        console.log('Using chunking parameters:', processorOptions);
-        
-        // Process the audio with options
-        const inputs = await processor(audioData, processorOptions);
-        console.log('Audio processed, inputs:', inputs);
-        
-        // Check if model is valid
-        if (!model) {
-          throw new Error('Model is not initialized');
-        }
-        
-        // Generate the transcription with chunking parameters
-        console.log('Generating transcription with model...');
-        
-        // Always use chunking parameters for consistency
-        const generateOptions = {
-          max_new_tokens: 448,
-          chunk_length_s: 30,   // Increased from 15 to 30
-          stride_length_s: 10,  // Increased from 5 to 10
-          return_timestamps: true // Add timestamps to help with chunking
-        };
-        
-        console.log('Using generation options:', generateOptions);
-        
-        const output = await model.generate(inputs.input_features, generateOptions);
-        console.log('Transcription generated, output:', output);
-        
-        // Check if output is valid
-        if (!output || !output[0]) {
-          throw new Error('Model output is invalid');
-        }
-        
-        // Decode the output - use tokenizer.decode instead of processor.decode if available
-        console.log('Decoding output...');
-        let transcription;
-        
-        // Try different decoding methods
-        if (typeof processor.decode === 'function') {
-          console.log('Using processor.decode method');
-          transcription = processor.decode(output[0]);
-        } else if (processor.tokenizer && typeof processor.tokenizer.decode === 'function') {
-          console.log('Using processor.tokenizer.decode method');
-          transcription = processor.tokenizer.decode(output[0]);
-        } else if (model.tokenizer && typeof model.tokenizer.decode === 'function') {
-          console.log('Using model.tokenizer.decode method');
-          transcription = model.tokenizer.decode(output[0]);
-        } else {
-          // Fallback: try to import the tokenizer directly
-          console.log('Using fallback decoding method');
-          const { WhisperTokenizer } = await import('@xenova/transformers');
-          const tokenizer = await WhisperTokenizer.from_pretrained(selectedModel);
-          transcription = tokenizer.decode(output[0]);
-        }
-        
-        console.log('Transcription decoded:', transcription);
-        
-        // Clean up the transcription by removing special tags
-        const cleanedTranscription = cleanWhisperOutput(transcription);
-        console.log('Cleaned transcription:', cleanedTranscription);
-        
-        return { text: cleanedTranscription || '[Empty transcription]' };
-      } catch (error) {
-        console.error('Error during Whisper transcription:', error);
-        console.error('Error details:', error.message);
-        console.error('Error stack:', error.stack);
-        throw error;
-      }
-    };
-    
-    console.log('Whisper model loaded successfully');
-  } catch (error) {
-    console.error('Error loading Whisper model:', error);
-    throw error;
-  }
-}
-
-// Load standard model using the pipeline approach
-async function loadStandardModel() {
-  console.log('Loading standard model using pipeline approach');
-  
-  try {
-    transcriber = await pipeline(
-      'automatic-speech-recognition', 
-      selectedModel, 
-      { 
-        progress_callback: progressCallback,
-        quantized: false,
-        revision: 'main',
-        framework: 'onnx',
-        cache_dir: env.cacheDir,
-        chunk_length_s: 30,     // Increased from 15 to 30
-        stride_length_s: 10,    // Increased from 5 to 10
-        max_new_tokens: 448,    // Increase token limit for longer transcriptions
-        return_timestamps: true // Enable timestamps to help with chunking
-      }
-    );
-    
-    console.log('Standard model loaded successfully');
-  } catch (error) {
-    console.error('Error loading standard model:', error);
+    console.error('Error initializing model:', error);
+    statusEl.textContent = 'Error loading model: ' + error.message;
     throw error;
   }
 }
@@ -843,6 +474,9 @@ function stopRecording() {
     statusEl.textContent = 'Error stopping recording';
     statusEl.classList.add('error');
   }
+  
+  // Save the transcription to history
+  saveTranscriptionToHistory();
 }
 
 // Process a normal (shorter) recording
@@ -1387,4 +1021,195 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Save settings when popup closes
-window.addEventListener('unload', saveSettings); 
+window.addEventListener('unload', saveSettings);
+
+// Initialize UI
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize tabs
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+  
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const tabName = button.getAttribute('data-tab');
+      
+      // Update active tab button
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      
+      // Show corresponding tab pane
+      tabPanes.forEach(pane => {
+        pane.classList.remove('active');
+        if (pane.id === `${tabName}-tab`) {
+          pane.classList.add('active');
+        }
+      });
+      
+      // Save preference
+      chrome.storage.local.set({ lastActiveTab: tabName });
+    });
+  });
+  
+  // Initialize size toggles
+  const sizeButtons = document.querySelectorAll('.size-btn');
+  
+  sizeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const size = button.getAttribute('data-size');
+      
+      // Update active size button
+      sizeButtons.forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      
+      // Apply size to body
+      document.body.classList.remove('size-small', 'size-medium', 'size-large');
+      document.body.classList.add(`size-${size}`);
+      
+      // Save preference
+      chrome.storage.local.set({ preferredSize: size });
+    });
+  });
+  
+  // Initialize side panel button
+  const sidePanelBtn = document.getElementById('sidepanel-btn');
+  if (sidePanelBtn) {
+    sidePanelBtn.addEventListener('click', () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]) {
+          chrome.sidePanel.open({ tabId: tabs[0].id });
+          window.close(); // Close the popup
+        }
+      });
+    });
+  }
+  
+  // Initialize accordions in help tab
+  const accordionHeaders = document.querySelectorAll('.accordion-header');
+  
+  accordionHeaders.forEach(header => {
+    header.addEventListener('click', () => {
+      const content = header.nextElementSibling;
+      
+      // Toggle active state
+      header.classList.toggle('active');
+      content.classList.toggle('active');
+    });
+  });
+  
+  // Initialize auto-expanding textarea
+  const transcriptionArea = document.getElementById('transcription');
+  if (transcriptionArea) {
+    transcriptionArea.addEventListener('input', function() {
+      // Reset height to auto to get the correct scrollHeight
+      this.style.height = 'auto';
+      // Set height to scrollHeight to expand the textarea
+      this.style.height = (this.scrollHeight) + 'px';
+    });
+  }
+  
+  // Load user preferences
+  loadUserPreferences();
+});
+
+// Load user preferences from storage
+async function loadUserPreferences() {
+  try {
+    const prefs = await chrome.storage.local.get(['preferredSize', 'lastActiveTab', 'darkMode']);
+    
+    // Apply size preference
+    if (prefs.preferredSize) {
+      const sizeButtons = document.querySelectorAll('.size-btn');
+      sizeButtons.forEach(btn => {
+        if (btn.getAttribute('data-size') === prefs.preferredSize) {
+          btn.click(); // Simulate click to apply the size
+        }
+      });
+    }
+    
+    // Apply tab preference
+    if (prefs.lastActiveTab) {
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      tabButtons.forEach(btn => {
+        if (btn.getAttribute('data-tab') === prefs.lastActiveTab) {
+          btn.click(); // Simulate click to switch to the tab
+        }
+      });
+    }
+    
+    // Apply dark mode preference
+    if (prefs.darkMode) {
+      document.body.classList.add('dark-mode');
+      const darkModeCheckbox = document.getElementById('dark-mode');
+      if (darkModeCheckbox) {
+        darkModeCheckbox.checked = true;
+      }
+    }
+  } catch (error) {
+    console.error('Error loading preferences:', error);
+  }
+}
+
+// Handle dark mode toggle
+const darkModeCheckbox = document.getElementById('dark-mode');
+if (darkModeCheckbox) {
+  darkModeCheckbox.addEventListener('change', function() {
+    if (this.checked) {
+      document.body.classList.add('dark-mode');
+      chrome.storage.local.set({ darkMode: true });
+    } else {
+      document.body.classList.remove('dark-mode');
+      chrome.storage.local.set({ darkMode: false });
+    }
+  });
+}
+
+// Handle settings save
+const saveSettingsBtn = document.getElementById('save-settings');
+if (saveSettingsBtn) {
+  saveSettingsBtn.addEventListener('click', async function() {
+    const defaultModel = document.getElementById('default-model').value;
+    const preloadModel = document.getElementById('preload-model').checked;
+    
+    // Save settings
+    await chrome.storage.local.set({
+      defaultModel,
+      preloadModel
+    });
+    
+    // Update model if changed
+    if (defaultModel !== selectedModel) {
+      selectedModel = defaultModel;
+      modelSelect.value = defaultModel;
+      await changeModel();
+    }
+    
+    // Show success message
+    statusEl.textContent = 'Settings saved';
+    statusEl.classList.add('success');
+    
+    // Switch back to transcribe tab
+    setTimeout(() => {
+      const transcribeTab = document.querySelector('[data-tab="transcribe"]');
+      if (transcribeTab) {
+        transcribeTab.click();
+      }
+    }, 1500);
+  });
+}
+
+// Add a function to save transcription to history
+async function saveTranscriptionToHistory() {
+  const text = transcriptionEl.value.trim();
+  if (!text) return;
+  
+  try {
+    await chrome.runtime.sendMessage({
+      action: 'saveTranscription',
+      text: text,
+      model: selectedModel
+    });
+    console.log('Transcription saved to history');
+  } catch (error) {
+    console.error('Error saving transcription:', error);
+  }
+} 
