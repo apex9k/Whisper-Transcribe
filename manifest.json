@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Whisper Transcribe (Dev)",
+  "name": "Whisper Transcribe",
   "version": "1.0.0",
   "description": "Real-time speech transcription using Whisper AI - 100% private, runs locally in your browser",
   "permissions": [
     "storage",
     "unlimitedStorage",
     "activeTab",
-    "sidePanel"
+    "sidePanel",
+    "microphone"
   ],
   "host_permissions": [
     "https://huggingface.co/*",
