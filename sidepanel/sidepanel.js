@@ -118,15 +118,6 @@ function initializeUI() {
     });
   });
   
-  // Initialize popout button
-  const popoutBtn = document.getElementById('popout-btn');
-  if (popoutBtn) {
-    popoutBtn.addEventListener('click', () => {
-      // Open the extension in a popup
-      chrome.action.openPopup();
-    });
-  }
-  
   // Initialize theme toggle
   const themeToggle = document.getElementById('theme-toggle');
   if (themeToggle) {

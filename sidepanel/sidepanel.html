@@ -14,7 +14,6 @@
       <p class="privacy-note">🔒 100% Local - Your audio never leaves your device</p>
       
       <div class="view-controls">
-        <button id="popout-btn" title="Open in popup"><i class="fas fa-external-link-alt"></i></button>
         <button id="theme-toggle" title="Toggle dark mode"><i class="fas fa-moon"></i></button>
       </div>
     </header>
@@ -38,7 +37,7 @@
             <option value="Xenova/whisper-small">Small (Multilingual)</option>
           </select>
           
-          <button id="record-btn" class="primary-btn">
+          <button id="record-btn" class="btn primary">
             <i class="fas fa-microphone"></i>
             <span>Start Recording</span>
           </button>
@@ -58,8 +57,14 @@
         <div class="transcription-container">
           <textarea id="transcription" placeholder="Transcription will appear here..." readonly></textarea>
           <div class="action-buttons">
-            <button id="copy-btn"><i class="fas fa-copy"></i> Copy</button>
-            <button id="clear-btn"><i class="fas fa-trash"></i> Clear</button>
+            <button id="copy-btn" class="btn">
+              <i class="fas fa-copy"></i>
+              <span>Copy</span>
+            </button>
+            <button id="clear-btn" class="btn">
+              <i class="fas fa-trash"></i>
+              <span>Clear</span>
+            </button>
             <button id="save-btn"><i class="fas fa-save"></i> Save</button>
           </div>
         </div>
