@@ -25,4 +25,11 @@ transformers-cache/
 *.njsproj
 *.sln
 *.sw?
-.DS_Store 
+.DS_Store
+
+# Extension packaging files
+*.pem
+*.crx
+dist-prod/
+
+# Existing ignores... 
