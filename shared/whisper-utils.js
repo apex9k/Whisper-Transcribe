@@ -184,16 +184,19 @@ export async function loadWhisperModel(modelName, progressCallback) {
             // Get the data from the output tensor
             let outputData;
             
-            if (output[0]) {
+            if (output && output[0]) {
               // Try different ways to get the data
-              if (output[0].tolist && typeof output[0].tolist === 'function') {
-                outputData = output[0].tolist();
+              if (output[0].data && Array.isArray(output[0].data)) {
+                outputData = output[0].data;
               } else if (output[0].array && typeof output[0].array === 'function') {
-                outputData = output[0].array();
-              } else if (output[0].data && Array.isArray(output[0].data)) {
-                outputData = output[0].data;  
+                outputData = await output[0].array();
+              } else if (output[0].tolist && typeof output[0].tolist === 'function') {
+                outputData = output[0].tolist();
               } else if (Array.isArray(output[0])) {
                 outputData = output[0];
+              } else if (output[0].sequences) {
+                // Handle new output format that might have sequences
+                outputData = output[0].sequences;
               } else {
                 // If all else fails, try to use the output directly
                 outputData = output[0];
@@ -202,27 +205,41 @@ export async function loadWhisperModel(modelName, progressCallback) {
               outputData = output;
             }
             
+            console.log('Output data for decoding:', outputData);
             console.log('Output data type for decoding:', typeof outputData, 
                       Array.isArray(outputData) ? 'Array' : 'Not an array');
             
             // Safely decode with error handling
-            if (canDecode) {
-              result = decoder.decode(outputData, { skip_special_tokens: true });
-            } else {
-              console.error('No decode function available after all attempts');
+            if (canDecode && outputData) {
+              if (Array.isArray(outputData)) {
+                result = decoder.decode(outputData, { skip_special_tokens: true });
+              } else if (outputData.data && Array.isArray(outputData.data)) {
+                result = decoder.decode(outputData.data, { skip_special_tokens: true });
+              } else if (outputData.sequences && Array.isArray(outputData.sequences)) {
+                // Try decoding sequences if available
+                result = decoder.decode(outputData.sequences[0], { skip_special_tokens: true });
+              } else {
+                console.error('Output data is not in expected format:', outputData);
+                result = '[Unexpected output format]';
+              }
               
-              // Emergency fallback: Convert output to JSON string as a last resort
-              result = `[Unable to decode properly] Raw output: ${JSON.stringify(outputData).substring(0, 100)}...`;
+              // Clean up the result
+              result = cleanWhisperOutput(result);
+              
+              // If result is empty or just special tokens, try alternative decoding
+              if (!result || result === '[BLANK_AUDIO]') {
+                console.log('Empty result, trying alternative decoding...');
+                if (output[0] && output[0].text) {
+                  result = output[0].text;
+                }
+              }
+            } else {
+              console.error('No decode function available or no output data');
+              result = '[Unable to decode output]';
             }
           } catch (decodeError) {
             console.error('Error decoding output:', decodeError);
-            
-            // Last resort, return a simple representation of the output
-            if (Array.isArray(output) && output.length > 0) {
-              result = `[Decode failed] Raw output available but couldn't be processed`;
-            } else {
-              result = '[No transcription available due to decoding error]';
-            }
+            result = `[Decode error: ${decodeError.message}]`;
           }
           
           console.log('Transcription result:', result);

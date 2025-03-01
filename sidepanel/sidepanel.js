@@ -461,6 +461,9 @@ async function toggleRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
       statusEl.textContent = 'Processing...';
+      recordBtn.disabled = true;
+      recordBtn.classList.add('transcribing');
+      recordBtn.querySelector('span').textContent = 'Transcribing...';
     }
   }
 }
@@ -493,6 +496,11 @@ async function processRecording(audioBlob) {
         
         statusEl.textContent = 'Ready';
         statusEl.classList.remove('transcribing');
+        
+        // Reset button state
+        recordBtn.disabled = false;
+        recordBtn.classList.remove('transcribing');
+        recordBtn.querySelector('span').textContent = 'Start Recording';
         
         // Also save to history when completing
         saveTranscriptionToHistory();

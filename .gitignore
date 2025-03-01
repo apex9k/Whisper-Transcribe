@@ -8,7 +8,7 @@ yarn.lock
 
 # Build output
 dist/
-build/
+dist-prod/
 out/
 
 # Cache directories
@@ -25,4 +25,8 @@ transformers-cache/
 *.njsproj
 *.sln
 *.sw?
-.DS_Store 
+.DS_Store
+
+# Additional file types
+*.pem
+*.crx 
