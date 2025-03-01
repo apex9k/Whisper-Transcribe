@@ -7,9 +7,14 @@
     "@xenova/transformers": "^2.15.1"
   },
   "devDependencies": {
-    "esbuild": "^0.20.1"
+    "bestzip": "^2.2.1",
+    "esbuild": "^0.20.1",
+    "rimraf": "^6.0.1"
   },
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "build:prod": "node build-prod.js",
+    "clean": "rimraf dist dist-prod",
+    "zip": "cd dist-prod && bestzip ../whisper-transcribe.zip *"
   }
-} 
+}
